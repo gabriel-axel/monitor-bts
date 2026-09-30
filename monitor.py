@@ -75,11 +75,13 @@ def sem_acento(texto):
 SILENCIOSO = False
 
 
-def notificar(titulo, mensagem, url=None, urgente=False):
+def notificar(titulo, mensagem, url=None, urgente=False, ticketmaster=False):
     log(f"ALERTA: {titulo} | {mensagem} | {url or ''}")
     if SILENCIOSO:
         return
-    cfg = CONFIG["notificacao"]
+    cfg = dict(CONFIG["notificacao"])
+    if cfg.get("ntfy_so_ticketmaster") and not ticketmaster:
+        cfg["ntfy_topico"] = ""  # notebook: celular recebe o resto pela nuvem (GitHub Actions), sem duplicar
     if cfg.get("windows") and os.name == "nt":
         try:
             toast_windows(titulo, mensagem, url, urgente)
@@ -135,9 +137,12 @@ def checar_ticketmaster(estado):
 
     for data, url in cfg["datas"].items():
         try:
-            pagina = requests.get(url, headers=UA, timeout=TIMEOUT).content.decode("utf-8", "replace")
+            r = requests.get(url, headers=UA, timeout=TIMEOUT)
+            pagina = r.content.decode("utf-8", "replace")
             m = re.search(r'"available":(true|false),"sectors":(\[\])?', pagina)
-            if not m:
+            if r.status_code >= 400 or len(pagina) < 2000:
+                status = "erro"  # bloqueio (ex: IP de servidor), não é mudança de página
+            elif not m:
                 status = "desconhecido"
             elif m.group(1) == "true" or m.group(2) is None:
                 status = "disponivel"
@@ -153,7 +158,7 @@ def checar_ticketmaster(estado):
         if status == "disponivel" and anterior.get("status") != "disponivel":
             notificar(f"INGRESSO NO TICKETMASTER {data}!",
                       f"Show {data} apareceu com setores à venda. Corre, preço oficial.",
-                      url, urgente=True)
+                      url, urgente=True, ticketmaster=True)
         elif status == "desconhecido":
             # página diferente do normal: fila virtual, manutenção ou layout novo
             (BASE / f"debug_tm_{data.replace('/', '-')}.html").write_text(pagina, encoding="utf-8")
@@ -163,7 +168,7 @@ def checar_ticketmaster(estado):
                     f"{titulo.group(1).strip()[:80] if titulo else '-'}) - salva em debug_tm_*.html")
             elif seguidos == 3:
                 notificar(f"Ticketmaster {data}: página mudou há 15 min",
-                          "Pode ser fila virtual (liberação?) ou layout novo. Confere no site.", url)
+                          "Pode ser fila virtual (liberação?) ou layout novo. Confere no site.", url, ticketmaster=True)
 
     # Página principal: bolinhas de status por data + links novos (datas extras, revenda oficial)
     try:
@@ -179,9 +184,9 @@ def checar_ticketmaster(estado):
         if disp and not tm.get("principal_disponivel"):
             notificar("TICKETMASTER: data BTS disponível!",
                       f"{disp} data(s) saíram de 'Esgotado' na página principal.",
-                      cfg["principal"], urgente=True)
+                      cfg["principal"], urgente=True, ticketmaster=True)
         for l in novos:
-            notificar("Ticketmaster: página nova do BTS", l, l, urgente=True)
+            notificar("Ticketmaster: página nova do BTS", l, l, urgente=True, ticketmaster=True)
         tm["principal_disponivel"] = disp
         tm["links"] = sorted(conhecidos | set(links))
     except requests.RequestException as e:
@@ -670,7 +675,7 @@ PAINEL_JS = """
   function frescor(){var g=new Date(document.body.getAttribute('data-gerado')).getTime();
     var min=Math.round((Date.now()-g)/60000);var st=document.getElementById('status');if(!st)return;
     if(min>35){var h=min>=120?Math.round(min/60)+' horas':min+' min';
-      st.className='parado';st.innerHTML='⚠️ RADAR PARADO há '+h+'. Os preços e alertas abaixo podem estar velhos. <b>Abra o notebook pra voltar a atualizar.</b>';}
+      st.className='parado';st.innerHTML='⚠️ RADAR PARADO há '+h+'. Os preços e alertas abaixo podem estar velhos. <b>'+document.body.getAttribute('data-aviso')+'</b>';}
     else{st.className='vivo';st.innerHTML='<span class="ponto"></span> ao vivo · atualizado há '+Math.max(0,min)+' min';}}
   frescor();setInterval(frescor,60000);
   var bts=document.querySelectorAll('.filtros button');
@@ -690,12 +695,15 @@ def gerar_painel(estado):
     dias_semana = {"28/10": "quarta", "30/10": "sexta", "31/10": "sábado"}
 
     rotulo = {"esgotado": "Esgotado", "disponivel": "À VENDA!", "erro": "sem resposta", "desconhecido": "página mudou"}
+    tm_ativo = CONFIG.get("ticketmaster_ativo", True)
     datas = "".join(
-        f'<a class="data {tm.get(d, {}).get("status", "")}" href="{e(u)}" target="_blank">'
+        f'<a class="data {tm.get(d, {}).get("status", "") if tm_ativo else ""}" href="{e(u)}" target="_blank">'
         f'<b>{d}</b><span>{dias_semana.get(d, "")}</span><br>'
-        f'<span class="pill">{rotulo.get(tm.get(d, {}).get("status"), "checando...")}</span></a>'
+        f'<span class="pill">{rotulo.get(tm.get(d, {}).get("status"), "checando...") if tm_ativo else "Ticketmaster ↗"}</span></a>'
         for d, u in CONFIG["ticketmaster"]["datas"].items()
     )
+    nota_tm = ("" if tm_ativo else '<div class="mute" style="text-align:center;font-size:12px;margin-top:6px">'
+               "Ticketmaster bloqueia servidores: ele é vigiado pelo notebook, com alerta no celular via ntfy.</div>")
 
     # BuyTicket: um card por data com o menor preço de cada setor
     aceitas = CONFIG["buyticket"]["categorias_aceitas"]
@@ -759,9 +767,12 @@ def gerar_painel(estado):
 
     execs = estado.get("ultimas_execucoes", {})
     quando = lambda k: f"{datetime.fromisoformat(execs[k]):%H:%M}" if k in execs else "—"
-    chips = "".join(f'<span class="chip">{n} <b>{quando(k)}</b></span>' for n, k in
-                    [("Ticketmaster", "ticketmaster"), ("BuyTicket", "buyticket"), ("Bluesky", "social"),
-                     ("Reddit", "reddit"), ("Notícias", "noticias")])
+    fontes_chip = [("BuyTicket", "buyticket"), ("Bluesky", "social"), ("Reddit", "reddit"), ("Notícias", "noticias")]
+    if tm_ativo:
+        fontes_chip.insert(0, ("Ticketmaster", "ticketmaster"))
+    chips = "".join(f'<span class="chip">{n} <b>{quando(k)}</b></span>' for n, k in fontes_chip)
+    aviso_parado = ("Pode ser atraso do GitHub. Se passar de 1 hora, avise quem cuida do radar."
+                    if os.environ.get("CI") else "Abra o notebook pra voltar a atualizar.")
     n_bons = sum(1 for a in anuncios if classe_anuncio(a) == "bom")
 
     PAINEL_FILE.write_text(f"""<!doctype html>
@@ -769,7 +780,7 @@ def gerar_painel(estado):
 <meta http-equiv="refresh" content="300"><title>Radar ARIRANG 💜</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+KR:wght@500&display=swap" rel="stylesheet">
-<style>{PAINEL_CSS}</style></head><body data-gerado="{agora().isoformat()}">
+<style>{PAINEL_CSS}</style></head><body data-gerado="{agora().isoformat()}" data-aviso="{e(aviso_parado)}">
 <div id="status"></div>
 <header class="hero">
   <div class="kr">보라해 · BORAHAE</div>
@@ -780,7 +791,7 @@ def gerar_painel(estado):
   <div class="atual">atualizado {agora():%d/%m às %H:%M} · recarrega sozinho</div>
 </header>
 <main class="wrap">
-  <div class="datas">{datas}</div>
+  <div class="datas">{datas}</div>{nota_tm}
 
   <h2>🎟️ BuyTicket agora <small>menor preço · {", ".join(aceitas)} · dourado = até {brl(teto)}</small></h2>
   <div class="grade">{bt_cards or '<div class="box mute">sem dados ainda</div>'}</div>
@@ -884,7 +895,7 @@ def uma_passada(forcar=False):
 def _passada(forcar):
     estado = carregar_estado()
     etapas = [
-        ("ticketmaster", 0, checar_ticketmaster),
+        ("ticketmaster", 0, checar_ticketmaster if CONFIG.get("ticketmaster_ativo", True) else None),
         ("social", CONFIG["intervalos_min"]["social"], checar_bluesky),
         ("buyticket", CONFIG["intervalos_min"]["buyticket"], checar_buyticket),
         ("x", CONFIG["intervalos_min"]["x"], checar_x),
@@ -892,7 +903,7 @@ def _passada(forcar):
         ("noticias", CONFIG["intervalos_min"]["noticias"], checar_noticias),
     ]
     for chave, intervalo, func in etapas:
-        if forcar or vencido(estado, chave, intervalo):
+        if func and (forcar or vencido(estado, chave, intervalo)):
             try:
                 func(estado)
                 marcar(estado, chave)
