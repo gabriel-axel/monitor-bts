@@ -1,0 +1,78 @@
+name: Radar ARIRANG
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GitHub pode atrasar alguns minutos em horário de pico
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: radar
+  cancel-in-progress: false
+
+jobs:
+  checar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    outputs:
+      publicar: ${{ steps.pub.outputs.sim }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # estado (anúncios já vistos, status anterior) passa de uma rodada pra outra pelo cache
+      - uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: estado-${{ github.run_id }}
+          restore-keys: estado-
+
+      - name: Checar fontes
+        run: python monitor.py
+        env:
+          NTFY_TOPICO: ${{ secrets.NTFY_TOPICO }}
+          PAINEL_URL: https://gabriel-axel.github.io/monitor-bts/
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state.json
+          key: estado-${{ github.run_id }}
+
+      - name: Log da rodada
+        if: always()
+        run: cat alertas.log 2>/dev/null || true
+
+      # publica o painel a cada ~15 min (Pages limita publicações por hora)
+      - name: Hora de publicar?
+        id: pub
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ $(( 10#$(date -u +%M) % 15 )) -lt 5 ]; then
+            echo "sim=true" >> "$GITHUB_OUTPUT"
+          fi
+          mkdir -p _site && cp painel.html _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pub.outputs.sim == 'true'
+        with:
+          path: _site
+
+  publicar:
+    needs: checar
+    if: needs.checar.outputs.publicar == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
