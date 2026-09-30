@@ -871,6 +871,7 @@ def gerar_painel(estado):
     <li>Nunca passe o <b>código de login</b> que chega no seu e-mail.</li>
     <li>🚩 Frases de roteiro: "primeira vez vendendo", "te passo meus dados", "gastei no sound", "comprovo tudo", "dispenso golpista", "tags:".</li>
     <li>🚩 Conta antiga que ficou parada e voltou só pra vender pode ter sido invadida. Texto igual em várias contas = golpe.</li>
+    <li>🚩 Perfil sem foto e sem nenhum outro post além do anúncio, ou o mesmo anúncio postado várias vezes seguidas = conta limpa pra golpe.</li>
     <li>VIP/Soundcheck não transfere. Meia exige comprovante do mesmo tipo na entrada.</li>
   </ol></div>
 
