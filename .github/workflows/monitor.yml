@@ -2,7 +2,7 @@ name: Radar ARIRANG
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub pode atrasar alguns minutos em horário de pico
+    - cron: "3-58/5 * * * *"   # minutos quebrados: o GitHub pula menos que em */5 (pico no minuto cheio)
   workflow_dispatch:
 
 permissions:
