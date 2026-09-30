@@ -1038,7 +1038,9 @@ def main():
         return
 
     if args.teste_notificacao:
-        notificar("Teste monitor BTS", "Se chegou isso, notificação funciona.", PAINEL_FILE.as_uri())
+        # ticketmaster=True: teste passa pelo filtro ntfy_so_ticketmaster e sempre chega no celular
+        notificar("💜 Teste Radar ARIRANG", "Se chegou isso no celular, o app ntfy está funcionando!",
+                  PAINEL_URL or "https://gabriel-axel.github.io/monitor-bts/", urgente=True, ticketmaster=True)
         return
     if args.loop:
         while True:
