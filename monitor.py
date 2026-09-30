@@ -459,24 +459,34 @@ def checar_buyticket(estado):
         if "camarote" in sem_acento(s["venue"]["name"]):
             continue
         data = datetime.fromisoformat(s["dates"][0].replace("Z", "+00:00")).astimezone(BRT).strftime("%d/%m")
-        url = f"https://buyticketbrasil.com/event/{cfg['slug']}/session/{s['id']}"
-        for tk in get(f"{BT_API}/sessions/{s['id']}/tickets")["tickets"]:
-            if "camarote" in sem_acento(tk["ticketType"]):
-                continue
-            for c in get(f"{BT_API}/sessions/{s['id']}/tickets/{tk['ticketId']}/categories")["categories"]:
-                valor = c["amount"]["value"]
-                if not valor or not c.get("listingId"):
-                    continue  # categoria sem anúncio
-                precos[f"{data}|{tk['ticketType']}|{c['name']}"] = {"valor": valor, "url": url}
-                if (c["name"] in cfg["categorias_aceitas"] and valor <= CONFIG["teto_preco"]
-                        and c["listingId"] not in bt["alertados"]):
-                    notificar(f"BuyTicket: R$ {valor:.0f} {tk['ticketType']} {c['name']} {data}",
-                              "Dentro do teto. Pague só pela plataforma (dinheiro fica retido até a entrega).",
-                              url, urgente=True)
-                    bt["alertados"].append(c["listingId"])
-            time.sleep(0.2)
+        try:
+            _precos_sessao(s, data, get, precos, bt, cfg)
+        except (requests.RequestException, ValueError, KeyError) as erro:
+            # site instável às vezes responde HTML: mantém os preços anteriores desta data
+            log(f"BuyTicket {data}: resposta inválida ({type(erro).__name__}), mantendo preços anteriores")
+            precos.update({k: v for k, v in bt["precos"].items() if k.startswith(data + "|")})
     bt["precos"] = precos
     bt["alertados"] = bt["alertados"][-500:]
+
+
+def _precos_sessao(s, data, get, precos, bt, cfg):
+    """Menor preço por setor/categoria de uma data; alerta o que estiver dentro do teto."""
+    url = f"https://buyticketbrasil.com/event/{cfg['slug']}/session/{s['id']}"
+    for tk in get(f"{BT_API}/sessions/{s['id']}/tickets")["tickets"]:
+        if "camarote" in sem_acento(tk["ticketType"]):
+            continue
+        for c in get(f"{BT_API}/sessions/{s['id']}/tickets/{tk['ticketId']}/categories")["categories"]:
+            valor = c["amount"]["value"]
+            if not valor or not c.get("listingId"):
+                continue  # categoria sem anúncio
+            precos[f"{data}|{tk['ticketType']}|{c['name']}"] = {"valor": valor, "url": url}
+            if (c["name"] in cfg["categorias_aceitas"] and valor <= CONFIG["teto_preco"]
+                    and c["listingId"] not in bt["alertados"]):
+                notificar(f"BuyTicket: R$ {valor:.0f} {tk['ticketType']} {c['name']} {data}",
+                          "Dentro do teto. Pague só pela plataforma (dinheiro fica retido até a entrega).",
+                          url, urgente=True)
+                bt["alertados"].append(c["listingId"])
+        time.sleep(0.2)
 
 
 def checar_reddit(estado):
