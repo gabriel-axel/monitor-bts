@@ -617,9 +617,11 @@ radial-gradient(1px 1px at 8% 82%,#fff,transparent),radial-gradient(1px 1px at 5
 .contagem small{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.08em}
 .frase{margin-top:14px;font-size:14px;opacity:.9}
 .atual{font-size:12px;opacity:.7;margin-top:8px}
+.dedica{display:none;margin:12px auto 0;width:fit-content;padding:6px 16px;border-radius:99px;font-size:14px;font-weight:600;
+background:linear-gradient(90deg,rgba(245,208,254,.25),rgba(165,180,252,.25));border:1px solid rgba(255,255,255,.35)}
 h2{font-size:18px;margin:34px 0 12px;display:flex;align-items:center;gap:8px}
 h2 small{font-weight:400;color:var(--mute);font-size:13px}
-.datas{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:-22px}
+.datas{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:-22px;position:relative;z-index:2}
 .data{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;text-align:center;text-decoration:none;color:var(--fg);box-shadow:0 8px 24px rgba(20,0,60,.25)}
 .data b{display:block;font-size:22px}
 .data span{font-size:12px;color:var(--mute)}
@@ -665,6 +667,14 @@ footer .chant{font-family:'Noto Sans KR',sans-serif;font-size:12px;letter-spacin
 
 PAINEL_JS = """
 (function(){
+  // nome vem só do link (#Nome): não fica gravado na página pública nem chega ao servidor
+  var nome=decodeURIComponent((location.hash||'').slice(1)).replace(/[^\\p{L} ]/gu,'').trim().slice(0,30);
+  if(nome){
+    document.title='Radar da '+nome+' 💜';
+    document.getElementById('kr').textContent='보라해, '+nome;
+    document.getElementById('frase').textContent='Radar da '+nome+': cada checagem é um passo mais perto de você no MorumBIS 💜';
+    var d=document.getElementById('dedica');d.textContent='feito com 💜 especialmente pra '+nome;d.style.display='block';
+  }
   var alvo=new Date('2026-10-28T20:00:00-03:00').getTime();
   function tick(){var d=Math.max(0,alvo-Date.now());var s=Math.floor(d/1000);
     var dias=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
@@ -783,11 +793,12 @@ def gerar_painel(estado):
 <style>{PAINEL_CSS}</style></head><body data-gerado="{agora().isoformat()}" data-aviso="{e(aviso_parado)}">
 <div id="status"></div>
 <header class="hero">
-  <div class="kr">보라해 · BORAHAE</div>
+  <div class="kr" id="kr">보라해 · BORAHAE</div>
   <h1><span>ARIRANG</span><br>SÃO PAULO</h1>
   <div class="local">BTS WORLD TOUR · Estádio MorumBIS · 28 · 30 · 31 de outubro</div>
   <div class="contagem" id="cd"></div>
-  <div class="frase">Radar de ingressos: a cada checagem, um passo mais perto do MorumBIS 💜</div>
+  <div class="frase" id="frase">Radar de ingressos: a cada checagem, um passo mais perto do MorumBIS 💜</div>
+  <div class="dedica" id="dedica"></div>
   <div class="atual">atualizado {agora():%d/%m às %H:%M} · recarrega sozinho</div>
 </header>
 <main class="wrap">
