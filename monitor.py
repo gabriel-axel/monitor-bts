@@ -286,6 +286,13 @@ def analisar_texto(texto):
     }
 
 
+def prioridade(setor, categoria):
+    """0 a 2: +1 se setor preferido (cadeiras), +1 se meia."""
+    cfg = CONFIG.get("prioridade", {})
+    return ((sem_acento(setor or "") in cfg.get("setores", []))
+            + (bool(cfg.get("meia")) and "meia" in sem_acento(categoria or "")))
+
+
 def avaliar(anuncio):
     """Retorna (alertar: bool, selo: str)."""
     if anuncio["setor"] == "vip":
@@ -394,9 +401,10 @@ def processar_posts(estado, posts, fonte):
         if alertar and p["criado"] >= limite:
             preco = f"R$ {a['preco']}" if a["preco"] else "preço não informado"
             detalhes = " / ".join(x for x in [a["setor"], a["categoria_txt"], ",".join(a["datas"])] if x)
-            notificar(f"Anúncio {a['fonte']}: {preco} ({selo})",
+            pri = prioridade(a["setor"], a["categoria"])
+            notificar(f"{'⭐ ' * pri}Anúncio {a['fonte']}: {preco} ({selo})",
                       f"{detalhes or 'setor ?'} - @{a['autor']}: {a['texto'][:120]}",
-                      a["url"], urgente=(selo == "preço de face"))
+                      a["url"], urgente=(selo == "preço de face" or pri > 0))
 
     if primeira_vez:
         iniciadas.append(fonte)
@@ -482,7 +490,8 @@ def _precos_sessao(s, data, get, precos, bt, cfg):
             precos[f"{data}|{tk['ticketType']}|{c['name']}"] = {"valor": valor, "url": url}
             if (c["name"] in cfg["categorias_aceitas"] and valor <= CONFIG["teto_preco"]
                     and c["listingId"] not in bt["alertados"]):
-                notificar(f"BuyTicket: R$ {valor:.0f} {tk['ticketType']} {c['name']} {data}",
+                notificar(f"{'⭐ ' * prioridade(tk['ticketType'], c['name'])}BuyTicket: R$ {valor:.0f} "
+                          f"{tk['ticketType']} {c['name']} {data}",
                           "Dentro do teto. Pague só pela plataforma (dinheiro fica retido até a entrega).",
                           url, urgente=True)
                 bt["alertados"].append(c["listingId"])
@@ -652,6 +661,7 @@ h2 small{font-weight:400;color:var(--mute);font-size:13px}
 .filtros button.on{background:var(--roxo);border-color:var(--roxo);color:#fff}
 .anuncio{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
 .anuncio.bom{border-left-color:var(--ok)} .anuncio.golpe{border-left-color:var(--ruim);opacity:.8} .anuncio.semp{border-left-color:var(--alerta)}
+.anuncio.pri{box-shadow:0 0 0 1px var(--ouro) inset} .linha.pri span:first-child{font-weight:600}
 .anuncio .topo{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .anuncio .preco{font-size:22px;font-weight:800}
 .tags{display:flex;flex-wrap:wrap;gap:4px}
@@ -746,16 +756,14 @@ def gerar_painel(estado):
     for chave, p in estado.get("buyticket", {}).get("precos", {}).items():
         data, setor, cat = chave.split("|")
         if cat in aceitas:
-            atual = por_data.setdefault(data, {}).get(setor)
-            if not atual or p["valor"] < atual[0]:
-                por_data[data][setor] = (p["valor"], cat, p["url"])
+            por_data.setdefault(data, []).append((prioridade(setor, cat), p["valor"], setor, cat, p["url"]))
     bt_cards = "".join(
         f'<div class="box"><h3>{d} · {dias_semana.get(d, "")}</h3>' + "".join(
-            f'<div class="linha"><span>{e(setor)} <span class="mute">({e(cat)})</span></span>'
+            f'<div class="linha{" pri" if pri else ""}"><span>{"⭐" * pri} {e(setor)} <span class="mute">({e(cat)})</span></span>'
             f'<a class="v {"ouro" if v <= teto else ""}" href="{e(url)}" target="_blank">{brl(v)}</a></div>'
-            for setor, (v, cat, url) in sorted(setores.items(), key=lambda kv: kv[1][0]))
+            for pri, v, setor, cat, url in sorted(linhas, key=lambda x: (-x[0], x[1])))  # cadeiras/meia primeiro
         + "</div>"
-        for d, setores in sorted(por_data.items())
+        for d, linhas in sorted(por_data.items())
     )
 
     def classe_anuncio(a):
@@ -765,12 +773,17 @@ def gerar_painel(estado):
             return "bom"
         return "semp" if a["selo"] == "sem preço" else "acima"
     cor_selo = {"bom": "ok", "golpe": "ruim", "semp": "ouro", "acima": "mute"}
+    pri_de = lambda a: prioridade(a["setor"], a["categoria"])
+    # dentro do teto primeiro; dentro de cada grupo, cadeiras/meia antes; depois mais recente
+    anuncios = sorted(anuncios, key=lambda a: (classe_anuncio(a) != "bom", -pri_de(a),
+                                               -datetime.fromisoformat(a["criado"]).timestamp()))
     cards_anuncios = "".join(
-        f'<div class="anuncio {classe_anuncio(a)}"><div class="topo">'
+        f'<div class="anuncio {classe_anuncio(a)}{" pri" if pri_de(a) else ""}"><div class="topo">'
         f'<span class="preco">{brl(a["preco"]) if a["preco"] else "—"}</span>'
         f'<span class="mute" style="font-size:12px">{datetime.fromisoformat(a["criado"]):%d/%m %H:%M} · {e(a["fonte"])}</span></div>'
         f'<div class="tags">' + "".join(f'<span class="tag">{e(t)}</span>' for t in
-                                        [a["setor"], a["categoria_txt"], ", ".join(a["datas"]), "@" + a["autor"]] if t and t != "@")
+                                        ["⭐ prioridade" if pri_de(a) else "", a["setor"], a["categoria_txt"], ", ".join(a["datas"]),
+                                         "@" + a["autor"]] if t and t != "@")
         + f'</div><span class="selo {cor_selo[classe_anuncio(a)]}">{e(a["selo"])}</span>'
         f'<span class="txt">{e(a["texto"][:180])}</span>'
         f'<a class="btn" href="{e(a["url"])}" target="_blank">Abrir anúncio</a></div>'
@@ -829,13 +842,14 @@ def gerar_painel(estado):
 <main class="wrap">
   <div class="datas">{datas}</div>{nota_tm}
 
-  <h2>🎟️ BuyTicket agora <small>menor preço · {", ".join(aceitas)} · dourado = até {brl(teto)}</small></h2>
+  <h2>🎟️ BuyTicket agora <small>menor preço · ⭐ cadeiras e meia primeiro · dourado = até {brl(teto)}</small></h2>
   <div class="grade">{bt_cards or '<div class="box mute">sem dados ainda</div>'}</div>
 
   <h2>📣 Anúncios de fãs <small>Bluesky, Reddit e BuyTicket</small></h2>
   <div class="filtros">
     <button class="on" data-f="todos">Todos</button>
     <button data-f="bom">💜 Dentro do teto ({n_bons})</button>
+    <button data-f="pri">⭐ Cadeiras / meia</button>
     <button data-f="semp">Sem preço</button>
     <button data-f="golpe">🚩 Suspeitos</button>
   </div>
