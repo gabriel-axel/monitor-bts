@@ -1,0 +1,90 @@
+{
+  "teto_preco": 1200,
+  "tenho_meia": true,
+  "datas": [
+    "28/10",
+    "30/10",
+    "31/10"
+  ],
+  "fim_monitoramento": "2026-10-31T20:00:00-03:00",
+  "notificacao": {
+    "windows": false,
+    "ntfy_topico": "",
+    "alertar_anuncio_sem_preco": true,
+    "hora_resumo_diario": 20
+  },
+  "intervalos_min": {
+    "social": 15,
+    "buyticket": 15,
+    "x": 15,
+    "reddit": 30,
+    "painel_online": 15,
+    "noticias": 30
+  },
+  "painel_online": {
+    "ativo": false,
+    "conta_github": "gabriel-axel",
+    "gist_id": ""
+  },
+  "buyticket": {
+    "slug": "bts-2026worldtourarirang",
+    "categorias_aceitas": [
+      "Inteira",
+      "Meia Estudante"
+    ]
+  },
+  "x_ativo": false,
+  "x_headless": true,
+  "buscas_x": [
+    "(vendo OR repasso OR repasse OR \"preço de custo\" OR \"valor pago\") (ingresso OR ingressos) (bts OR arirang) -compro -procuro -procurando",
+    "(bts OR arirang) (arquibancada OR \"cadeira superior\" OR \"cadeira inferior\" OR pista) (vendo OR repasso OR vendendo) -compro -procuro",
+    "(bts OR arirang) ingresso (morumbis OR morumbi OR \"28/10\" OR \"30/10\" OR \"31/10\") -compro -procuro"
+  ],
+  "buscas_reddit": [
+    "bts (ingresso OR ingressos OR morumbis OR morumbi)",
+    "bts (\"sao paulo\" OR \"são paulo\" OR brazil) ticket"
+  ],
+  "ticketmaster": {
+    "principal": "https://www.ticketmaster.com.br/event/bts-world-tour-arirang",
+    "datas": {
+      "28/10": "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-28-10",
+      "30/10": "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-30-10",
+      "31/10": "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-31-10"
+    }
+  },
+  "buscas_bluesky": [
+    "vendo ingresso bts",
+    "ingresso bts",
+    "ingresso bts morumbis",
+    "repasse ingresso bts",
+    "vendo bts arirang",
+    "bts arquibancada",
+    "bts cadeira superior"
+  ],
+  "buscas_noticias": [
+    "BTS ingressos",
+    "BTS Ticketmaster",
+    "BTS Quentro",
+    "BTS Morumbis",
+    "BTS cambistas"
+  ],
+  "precos_face": {
+    "arquibancada": [
+      680,
+      340
+    ],
+    "cadeira superior": [
+      980,
+      490
+    ],
+    "cadeira inferior": [
+      1080,
+      540
+    ],
+    "pista": [
+      1250,
+      625
+    ]
+  },
+  "taxa_servico": 0.2
+}
