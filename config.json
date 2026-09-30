@@ -11,7 +11,8 @@
     "windows": false,
     "ntfy_topico": "",
     "alertar_anuncio_sem_preco": true,
-    "hora_resumo_diario": 20
+    "hora_resumo_diario": 20,
+    "ntfy_so_ticketmaster": false
   },
   "intervalos_min": {
     "social": 15,
@@ -86,5 +87,6 @@
       625
     ]
   },
-  "taxa_servico": 0.2
+  "taxa_servico": 0.2,
+  "ticketmaster_ativo": false
 }
