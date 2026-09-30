@@ -158,7 +158,9 @@ def checar_ticketmaster(estado):
             # página diferente do normal: fila virtual, manutenção ou layout novo
             (BASE / f"debug_tm_{data.replace('/', '-')}.html").write_text(pagina, encoding="utf-8")
             if seguidos == 1:
-                log(f"Ticketmaster {data}: página diferente do normal (salva em debug_tm_*.html)")
+                titulo = re.search(r"<title[^>]*>(.*?)</title>", pagina, re.S | re.I)
+                log(f"Ticketmaster {data}: página diferente do normal ({len(pagina)} bytes, título: "
+                    f"{titulo.group(1).strip()[:80] if titulo else '-'}) - salva em debug_tm_*.html")
             elif seguidos == 3:
                 notificar(f"Ticketmaster {data}: página mudou há 15 min",
                           "Pode ser fila virtual (liberação?) ou layout novo. Confere no site.", url)
