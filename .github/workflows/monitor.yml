@@ -66,7 +66,8 @@ jobs:
       - name: Hora de publicar?
         id: pub
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ $(( 10#$(date -u +%M) % 15 )) -lt 5 ]; then
+          # só a cada ~15 min, mesmo em disparo manual/pelo notebook (Pages: ~10 publicações/hora)
+          if [ $(( 10#$(date -u +%M) % 15 )) -lt 5 ]; then
             echo "sim=true" >> "$GITHUB_OUTPUT"
           fi
           mkdir -p _site && cp painel.html _site/index.html
