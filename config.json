@@ -88,5 +88,6 @@
     ]
   },
   "taxa_servico": 0.2,
-  "ticketmaster_ativo": false
+  "ticketmaster_ativo": false,
+  "status_tm_url": "https://gist.githubusercontent.com/gabriel-axel/70634f3170d56ef90f5e59f270c97924/raw/ticketmaster.json"
 }
