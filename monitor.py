@@ -890,14 +890,38 @@ def gerar_painel(estado):
 </body></html>""", encoding="utf-8")
 
 
-def publicar_gist(arquivos):
-    """Grava arquivos ({nome: texto}) no gist secreto da conta pessoal (token do gh, sem trocar a conta ativa)."""
-    cfg = CONFIG["painel_online"]
+def _token_github():
+    """Token da conta pessoal pego do gh (sem trocar a conta ativa). None se não logada."""
+    conta = CONFIG["painel_online"]["conta_github"]
     gh = shutil.which("gh") or r"C:\Program Files\GitHub CLI\gh.exe"
-    token = subprocess.run([gh, "auth", "token", "--user", cfg["conta_github"]], capture_output=True,
+    token = subprocess.run([gh, "auth", "token", "--user", conta], capture_output=True,
                            text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
     if not token:
-        log(f"gist: conta {cfg['conta_github']} não logada no gh")
+        log(f"GitHub: conta {conta} não logada no gh")
+    return token or None
+
+
+def disparar_nuvem():
+    """Plano B: com o notebook ligado, dispara a rodada da nuvem se o agendamento do GitHub atrasar."""
+    cfg = CONFIG["nuvem"]
+    token = _token_github()
+    if not token:
+        return
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    base = f"https://api.github.com/repos/{cfg['repo']}/actions"
+    runs = requests.get(f"{base}/runs", params={"per_page": 1}, headers=headers, timeout=TIMEOUT).json()
+    ultima = runs.get("workflow_runs") or []
+    if ultima and agora() - datetime.fromisoformat(ultima[0]["created_at"].replace("Z", "+00:00")) < timedelta(minutes=6):
+        return  # nuvem rodou há pouco (agendamento funcionando)
+    requests.post(f"{base}/workflows/{cfg['workflow']}/dispatches", json={"ref": "main"},
+                  headers=headers, timeout=TIMEOUT).raise_for_status()
+
+
+def publicar_gist(arquivos):
+    """Grava arquivos ({nome: texto}) no gist secreto da conta pessoal."""
+    cfg = CONFIG["painel_online"]
+    token = _token_github()
+    if not token:
         return
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
     files = {nome: {"content": texto} for nome, texto in arquivos.items()}
@@ -976,6 +1000,11 @@ def _passada(forcar):
             except Exception:
                 log(f"erro em {chave}: {traceback.format_exc(limit=2)}")
             salvar_estado(estado)
+    if CONFIG.get("nuvem", {}).get("disparar_do_notebook"):
+        try:
+            disparar_nuvem()
+        except Exception as e:
+            log(f"disparar nuvem: {e}")
     if CONFIG.get("status_tm_online") and CONFIG.get("ticketmaster_ativo", True):
         try:
             publicar_status_tm(estado)
