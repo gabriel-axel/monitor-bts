@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write   # pra desligar o próprio workflow depois dos shows
   contents: read
   pages: write
   id-token: write
@@ -16,11 +17,20 @@ concurrency:
 
 jobs:
   checar:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # fixo: ubuntu-latest muda de versão em 19/10
     timeout-minutes: 8
     outputs:
       publicar: ${{ steps.pub.outputs.sim }}
     steps:
+      - name: Encerrar depois dos shows
+        run: |
+          if [ "$(TZ=America/Sao_Paulo date +%Y%m%d)" -ge 20261101 ]; then
+            gh workflow disable "Radar ARIRANG" -R "$GITHUB_REPOSITORY"
+            echo "Shows acabaram (31/10): workflow desligado."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -69,7 +79,7 @@ jobs:
   publicar:
     needs: checar
     if: needs.checar.outputs.publicar == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # fixo: ubuntu-latest muda de versão em 19/10
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
