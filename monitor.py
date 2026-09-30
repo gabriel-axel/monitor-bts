@@ -688,6 +688,20 @@ PAINEL_JS = """
       st.className='parado';st.innerHTML='⚠️ RADAR PARADO há '+h+'. Os preços e alertas abaixo podem estar velhos. <b>'+document.body.getAttribute('data-aviso')+'</b>';}
     else{st.className='vivo';st.innerHTML='<span class="ponto"></span> ao vivo · atualizado há '+Math.max(0,min)+' min';}}
   frescor();setInterval(frescor,60000);
+  // painel da nuvem: status do Ticketmaster publicado pelo notebook
+  var tmUrl=document.body.getAttribute('data-tm');
+  function statusTm(){if(!tmUrl)return;fetch(tmUrl+'?t='+Date.now()).then(function(r){return r.json();}).then(function(j){
+    var idade=(Date.now()-new Date(j.atualizado).getTime())/60000;
+    var hora=new Date(j.atualizado).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    var nome={esgotado:'Esgotado',disponivel:'À VENDA!',erro:'sem resposta',desconhecido:'página mudou'};
+    document.querySelectorAll('.data').forEach(function(c){var s=j.datas[c.getAttribute('data-d')];if(!s)return;
+      c.querySelector('.pill').textContent=nome[s]||s;c.classList.toggle('disponivel',s==='disponivel');});
+    var n=document.getElementById('nota-tm');if(!n)return;
+    n.innerHTML=idade>35
+      ?'<span style="display:inline-block;background:#dc2626;color:#fff;border-radius:12px;padding:6px 12px;font-weight:600">⚠️ Ticketmaster sem vigia desde '+hora+'. Abra o notebook pra voltar a checar.</span>'
+      :'<span class="ok">● Ticketmaster checado pelo notebook às '+hora.split(' ').pop()+' · a cada 5 min</span>';
+  }).catch(function(){});}
+  statusTm();setInterval(statusTm,120000);
   var bts=document.querySelectorAll('.filtros button');
   bts.forEach(function(b){b.onclick=function(){bts.forEach(function(x){x.classList.remove('on')});b.classList.add('on');
     var f=b.getAttribute('data-f');document.querySelectorAll('.anuncio').forEach(function(a){
@@ -707,13 +721,14 @@ def gerar_painel(estado):
     rotulo = {"esgotado": "Esgotado", "disponivel": "À VENDA!", "erro": "sem resposta", "desconhecido": "página mudou"}
     tm_ativo = CONFIG.get("ticketmaster_ativo", True)
     datas = "".join(
-        f'<a class="data {tm.get(d, {}).get("status", "") if tm_ativo else ""}" href="{e(u)}" target="_blank">'
+        f'<a class="data {tm.get(d, {}).get("status", "") if tm_ativo else ""}" data-d="{d}" href="{e(u)}" target="_blank">'
         f'<b>{d}</b><span>{dias_semana.get(d, "")}</span><br>'
         f'<span class="pill">{rotulo.get(tm.get(d, {}).get("status"), "checando...") if tm_ativo else "Ticketmaster ↗"}</span></a>'
         for d, u in CONFIG["ticketmaster"]["datas"].items()
     )
-    nota_tm = ("" if tm_ativo else '<div class="mute" style="text-align:center;font-size:12px;margin-top:6px">'
-               "Ticketmaster bloqueia servidores: ele é vigiado pelo notebook, com alerta no celular via ntfy.</div>")
+    nota_tm = ("" if tm_ativo else '<div id="nota-tm" class="mute" style="text-align:center;font-size:13px;margin-top:8px">'
+               "Ticketmaster é vigiado pelo notebook (bloqueia servidores), com alerta no celular via ntfy.</div>")
+    status_tm_url = "" if tm_ativo else CONFIG.get("status_tm_url", "")
 
     # BuyTicket: um card por data com o menor preço de cada setor
     aceitas = CONFIG["buyticket"]["categorias_aceitas"]
@@ -790,7 +805,7 @@ def gerar_painel(estado):
 <meta http-equiv="refresh" content="300"><title>Radar ARIRANG 💜</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+KR:wght@500&display=swap" rel="stylesheet">
-<style>{PAINEL_CSS}</style></head><body data-gerado="{agora().isoformat()}" data-aviso="{e(aviso_parado)}">
+<style>{PAINEL_CSS}</style></head><body data-gerado="{agora().isoformat()}" data-aviso="{e(aviso_parado)}" data-tm="{e(status_tm_url)}">
 <div id="status"></div>
 <header class="hero">
   <div class="kr" id="kr">보라해 · BORAHAE</div>
@@ -850,28 +865,43 @@ def gerar_painel(estado):
 </body></html>""", encoding="utf-8")
 
 
-def publicar_painel():
-    """Sobe painel.html num gist secreto da conta pessoal (token pego do gh, sem trocar a conta ativa)."""
+def publicar_gist(arquivos):
+    """Grava arquivos ({nome: texto}) no gist secreto da conta pessoal (token do gh, sem trocar a conta ativa)."""
     cfg = CONFIG["painel_online"]
     gh = shutil.which("gh") or r"C:\Program Files\GitHub CLI\gh.exe"
     token = subprocess.run([gh, "auth", "token", "--user", cfg["conta_github"]], capture_output=True,
                            text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
     if not token:
-        log(f"painel online: conta {cfg['conta_github']} não logada no gh")
+        log(f"gist: conta {cfg['conta_github']} não logada no gh")
         return
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    arquivos = {"painel.html": {"content": PAINEL_FILE.read_text(encoding="utf-8")}}
+    files = {nome: {"content": texto} for nome, texto in arquivos.items()}
     if cfg["gist_id"]:
-        r = requests.patch(f"https://api.github.com/gists/{cfg['gist_id']}", json={"files": arquivos},
+        r = requests.patch(f"https://api.github.com/gists/{cfg['gist_id']}", json={"files": files},
                            headers=headers, timeout=TIMEOUT)
     else:
         r = requests.post("https://api.github.com/gists", headers=headers, timeout=TIMEOUT,
-                          json={"files": arquivos, "public": False, "description": "Monitor BTS Arirang"})
+                          json={"files": files, "public": False, "description": "Monitor BTS Arirang"})
         r.raise_for_status()
         cfg["gist_id"] = r.json()["id"]
         (BASE / "config.json").write_text(json.dumps(CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
-        log(f"painel online criado: gist {cfg['gist_id']}")
+        log(f"gist criado: {cfg['gist_id']}")
     r.raise_for_status()
+
+
+def publicar_painel():
+    publicar_gist({"painel.html": PAINEL_FILE.read_text(encoding="utf-8")})
+
+
+def publicar_status_tm(estado):
+    """Notebook -> gist: status das datas no Ticketmaster, lido pelo painel da nuvem (que é bloqueado lá)."""
+    tm = estado.get("ticketmaster", {})
+    datas = {d: tm.get(d, {}).get("status") for d in CONFIG["ticketmaster"]["datas"]}
+    if datas == estado.get("status_tm_publicado") and not vencido(estado, "status_tm", 15):
+        return
+    publicar_gist({"ticketmaster.json": json.dumps({"atualizado": agora().isoformat(), "datas": datas})})
+    estado["status_tm_publicado"] = datas
+    marcar(estado, "status_tm")
 
 
 # ---------------------------------------------------------------- main
@@ -921,6 +951,12 @@ def _passada(forcar):
             except Exception:
                 log(f"erro em {chave}: {traceback.format_exc(limit=2)}")
             salvar_estado(estado)
+    if CONFIG.get("status_tm_online") and CONFIG.get("ticketmaster_ativo", True):
+        try:
+            publicar_status_tm(estado)
+            salvar_estado(estado)
+        except Exception as e:
+            log(f"status Ticketmaster online: {e}")
     resumo_diario(estado)
     salvar_estado(estado)
     gerar_painel(estado)
