@@ -819,8 +819,8 @@ def gerar_painel(estado):
     if tm_ativo:
         fontes_chip.insert(0, ("Ticketmaster", "ticketmaster"))
     chips = "".join(f'<span class="chip">{n} <b>{quando(k)}</b></span>' for n, k in fontes_chip)
-    aviso_parado = ("Pode ser atraso do GitHub. Se passar de 1 hora, avise quem cuida do radar."
-                    if os.environ.get("CI") else "Abra o notebook pra voltar a atualizar.")
+    # agendamento do GitHub não dispara nesta conta: na prática a nuvem roda quando o notebook a aciona
+    aviso_parado = "Abra o notebook pra voltar a atualizar."
     n_bons = sum(1 for a in anuncios if classe_anuncio(a) == "bom")
 
     PAINEL_FILE.write_text(f"""<!doctype html>
