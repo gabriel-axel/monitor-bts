@@ -140,8 +140,18 @@ def checar_ticketmaster(estado):
             r = requests.get(url, headers=UA, timeout=TIMEOUT)
             pagina = r.content.decode("utf-8", "replace")
             m = re.search(r'"available":(true|false),"sectors":(\[\])?', pagina)
+            # formato de 07/10 (lote extra): flag por show + lista de setores com "available"
+            show = re.search(r'"startDateString":"[^"]*","available":(true|false)', pagina)
+            setores = sorted({s for s in re.findall(
+                r'"sections":\[\{"id":\d+,"name":"([^"]+)","uuid":"[^"]+","available":true', pagina)
+                if "VIP" not in s.upper()})  # pacote VIP passa do teto e não transfere
             if r.status_code >= 400 or len(pagina) < 2000:
                 status = "erro"  # bloqueio (ex: IP de servidor), não é mudança de página
+            elif show:
+                status = "disponivel" if setores or (show.group(1) == "true" and '"sections":[' not in pagina) \
+                    else "esgotado"
+            elif not m and '"shows":[]' in pagina:
+                status = "esgotado"  # desde 07/10 o TM tira a lista de shows da página quando esgota
             elif not m:
                 status = "desconhecido"
             elif m.group(1) == "true" or m.group(2) is None:
@@ -149,7 +159,7 @@ def checar_ticketmaster(estado):
             else:
                 status = "esgotado"
         except requests.RequestException as e:
-            status = "erro"
+            status, setores = "erro", []
             log(f"Ticketmaster {data}: {e}")
 
         anterior = tm.get(data, {})
@@ -157,7 +167,7 @@ def checar_ticketmaster(estado):
         tm[data] = {"status": status, "checado": agora().isoformat(), "estranho_seguidos": seguidos}
         if status == "disponivel" and anterior.get("status") != "disponivel":
             notificar(f"INGRESSO NO TICKETMASTER {data}!",
-                      f"Show {data} apareceu com setores à venda. Corre, preço oficial.",
+                      f"À venda: {', '.join(setores).title() if setores else 'setores'}. Corre, preço oficial.",
                       url, urgente=True, ticketmaster=True)
         elif status == "desconhecido":
             # página diferente do normal: fila virtual, manutenção ou layout novo
@@ -501,12 +511,18 @@ def _precos_sessao(s, data, get, precos, bt, cfg):
 def checar_reddit(estado):
     ns = {"a": "http://www.w3.org/2005/Atom"}
     posts = []
-    for i, q in enumerate(CONFIG["buscas_reddit"]):
-        if i:
-            time.sleep(8)  # Reddit sem login limita rápido
-        r = requests.get("https://www.reddit.com/search.rss",
-                         params={"q": q, "sort": "new", "limit": 50},
-                         headers=UA_REDDIT, timeout=TIMEOUT)
+    espera = 0
+    for q in CONFIG["buscas_reddit"]:
+        for tentativa in range(2):
+            # sem login o Reddit libera ~1 request por janela; espera o reset que ele informa
+            time.sleep(min(espera, 45))  # rodada tem limite de 4 min no Agendador
+            r = requests.get("https://www.reddit.com/search.rss",
+                             params={"q": q, "sort": "new", "limit": 50},
+                             headers=UA_REDDIT, timeout=TIMEOUT)
+            restante = float(r.headers.get("x-ratelimit-remaining", 1))
+            espera = float(r.headers.get("x-ratelimit-reset", 8)) + 2 if restante < 1 else 2
+            if r.status_code != 429:
+                break
         if r.status_code in (403, 429):  # 403: Reddit bloqueia IP de servidor (GitHub Actions)
             log(f"Reddit: acesso negado ({r.status_code}), tenta na próxima rodada")
             break
