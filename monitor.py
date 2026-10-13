@@ -592,12 +592,15 @@ def checar_noticias(estado):
             if "bts" not in t or not RE_NOTICIA.search(t) or RE_RUIDO.search(t):
                 continue
             try:
-                data = parsedate_to_datetime(item.findtext("pubDate")).astimezone(BRT).isoformat()
+                pub = parsedate_to_datetime(item.findtext("pubDate")).astimezone(BRT)
             except Exception:
-                data = agora().isoformat()
-            nts["itens"].append({"titulo": titulo, "link": link, "data": data})
+                pub = None
+            if pub and pub < agora() - timedelta(days=7):
+                continue  # when:7d às vezes deixa passar matéria antiga
+            nts["itens"].append({"titulo": titulo, "link": link, "data": (pub or agora()).isoformat()})
             if not primeira_vez:
-                notificar("Notícia BTS ingressos", titulo, link)
+                quando = f"{pub:%d/%m/%Y %H:%M}" if pub else "data desconhecida"
+                notificar("Notícia BTS ingressos", f"[{quando}] {titulo}", link)
     nts["vistos"] = list(vistos)[-2000:]
     nts["itens"] = sorted(nts["itens"], key=lambda i: i["data"])[-60:]
 
